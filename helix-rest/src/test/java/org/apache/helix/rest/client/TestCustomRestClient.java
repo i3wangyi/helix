@@ -1,12 +1,11 @@
 package org.apache.helix.rest.client;
 
-import static org.mockito.Matchers.*;
-import static org.mockito.Mockito.*;
-
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.collect.ImmutableList;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.Map;
-
 import org.apache.http.HttpResponse;
 import org.apache.http.HttpStatus;
 import org.apache.http.StatusLine;
@@ -17,14 +16,16 @@ import org.apache.http.impl.client.HttpClients;
 import org.junit.Assert;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.common.collect.ImmutableList;
+import static org.mockito.Matchers.*;
+import static org.mockito.Mockito.*;
 
 public class TestCustomRestClient {
+  private static final Logger LOG = LoggerFactory.getLogger(TestCustomRestClient.class);
   private static final String HTTP_LOCALHOST = "http://localhost:1000";
   @Mock
   HttpClient _httpClient;
@@ -145,11 +146,47 @@ public class TestCustomRestClient {
     Assert.assertEquals(json.get("data").asText(), "{}");
   }
 
+  @Test
+  public void testGetPartitionsStoppableCheckWhenMultiThreads()
+      throws IOException, InterruptedException {
+    int parallelCount = 3;
+    MockCustomRestClient customRestClient = new MockCustomRestClient(_httpClient, parallelCount);
+    HttpResponse httpResponse = mock(HttpResponse.class);
+    StatusLine statusLine = mock(StatusLine.class);
+
+    when(statusLine.getStatusCode()).thenReturn(HttpStatus.SC_NOT_FOUND);
+    when(httpResponse.getStatusLine()).thenReturn(statusLine);
+    when(_httpClient.execute(any(HttpPost.class))).thenReturn(httpResponse);
+
+    Runnable runnable = () -> {
+      try {
+        LOG.info("Executing {}", Thread.currentThread().getName());
+        customRestClient.getPartitionStoppableCheck(HTTP_LOCALHOST, Collections.emptyList(), Collections.emptyMap());
+      } catch (IOException e) {
+        LOG.info("Ignore the exception in test");
+      }
+    };
+    Thread[] threads = new Thread[10];
+    for (int i = 0; i < threads.length; i++) {
+      threads[i] = new Thread(runnable, "Thread: " + i);
+      threads[i].start();
+    }
+    for (Thread thread : threads) {
+      thread.join();
+    }
+
+    verify(_httpClient, times(parallelCount)).execute(any());
+  }
+
   private class MockCustomRestClient extends CustomRestClientImpl {
     private String _jsonResponse = "";
 
     MockCustomRestClient(HttpClient mockHttpClient) {
       super(mockHttpClient);
+    }
+
+    MockCustomRestClient(HttpClient mockHttpClient, int parallelCount) {
+      super(mockHttpClient, parallelCount);
     }
 
     void setJsonResponse(String response) {

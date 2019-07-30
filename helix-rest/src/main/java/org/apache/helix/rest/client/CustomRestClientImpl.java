@@ -19,11 +19,15 @@ package org.apache.helix.rest.client;
  * under the License.
  */
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.annotations.VisibleForTesting;
 import java.io.IOException;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
+import java.util.concurrent.Semaphore;
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
 import org.apache.http.HttpStatus;
@@ -36,10 +40,10 @@ import org.apache.http.util.EntityUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.common.annotations.VisibleForTesting;
 
+/**
+ * The client interacts with customized rest endpoints on participant side
+ */
 class CustomRestClientImpl implements CustomRestClient {
   private static final Logger LOG = LoggerFactory.getLogger(CustomRestClient.class);
 
@@ -52,15 +56,25 @@ class CustomRestClientImpl implements CustomRestClient {
   private static final String ACCEPT_CONTENT_TYPE = "application/json";
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-  private HttpClient _httpClient;
+  private final HttpClient _httpClient;
+  private final Semaphore _semaphore;
+  // a transient cache holds the HttpResponse of HttpPosts, only valid when cache is enabled
+  private final Map<Integer, HttpResponse> _cachedResults = new HashMap<>();
 
   private interface JsonConverter {
     Map<String, Boolean> convert(JsonNode jsonNode);
   }
 
-  public CustomRestClientImpl(HttpClient httpClient) {
+  CustomRestClientImpl(HttpClient httpClient) {
     _httpClient = httpClient;
+    _semaphore = new Semaphore(10);
   }
+
+  CustomRestClientImpl(HttpClient httpClient, int parallelCount) {
+    _httpClient = httpClient;
+    _semaphore = new Semaphore(parallelCount);
+  }
+
 
   @Override
   public Map<String, Boolean> getInstanceStoppableCheck(String baseUrl,
@@ -97,7 +111,17 @@ class CustomRestClientImpl implements CustomRestClient {
           kv -> result.put(kv.getKey(), kv.getValue().get(IS_HEALTHY_FIELD).asBoolean()));
       return result;
     };
-    return handleResponse(post(url, payLoads), jsonConverter);
+    try {
+      // use semaphore to allow X threads to submit HttpRequests at a time
+      // without thread synchronization, duplicate http requests will still exist
+      _semaphore.acquire();
+      return handleResponse(post(url, payLoads), jsonConverter);
+    } catch (InterruptedException e) {
+      LOG.warn("Interrupted while acquiring the semaphore", e);
+    } finally {
+      _semaphore.release();
+    }
+    return Collections.emptyMap();
   }
 
   @VisibleForTesting
@@ -122,18 +146,23 @@ class CustomRestClientImpl implements CustomRestClient {
 
   @VisibleForTesting
   protected HttpResponse post(String url, Map<String, String> payloads) throws IOException {
+    HttpPost postRequest = new HttpPost(url);
+    postRequest.setHeader("Accept", ACCEPT_CONTENT_TYPE);
+    StringEntity entity = new StringEntity(OBJECT_MAPPER.writeValueAsString(payloads), ContentType.APPLICATION_JSON);
+    postRequest.setEntity(entity);
+    HttpResponse httpResponse;
+    int hashCode = url.hashCode() + payloads.hashCode();
+    if (_cachedResults.containsKey(hashCode)) {
+      return _cachedResults.get(hashCode);
+    }
     try {
-      HttpPost postRequest = new HttpPost(url);
-      postRequest.setHeader("Accept", ACCEPT_CONTENT_TYPE);
-      StringEntity entity = new StringEntity(OBJECT_MAPPER.writeValueAsString(payloads),
-          ContentType.APPLICATION_JSON);
-      postRequest.setEntity(entity);
       LOG.info("Executing request: {}, headers: {}, entity: {}", postRequest.getRequestLine(),
           postRequest.getAllHeaders(), postRequest.getEntity());
-      return _httpClient.execute(postRequest);
+      httpResponse = _httpClient.execute(postRequest);
+      _cachedResults.put(hashCode, httpResponse);
+      return httpResponse;
     } catch (IOException e) {
-      LOG.error("Failed to perform customized health check. Is participant endpoint {} available?",
-          url, e);
+      LOG.error("Failed to perform customized health check. Is participant endpoint {} available?", url, e);
       throw e;
     }
   }
