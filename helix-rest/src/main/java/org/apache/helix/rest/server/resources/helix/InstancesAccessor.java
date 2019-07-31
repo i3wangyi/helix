@@ -3,19 +3,24 @@ package org.apache.helix.rest.server.resources.helix;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
-
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.Response;
-
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.helix.HelixAdmin;
 import org.apache.helix.HelixDataAccessor;
@@ -41,6 +46,8 @@ import org.slf4j.LoggerFactory;
 @Path("/clusters/{clusterId}/instances")
 public class InstancesAccessor extends AbstractHelixResource {
   private final static Logger _logger = LoggerFactory.getLogger(InstancesAccessor.class);
+
+  private final ExecutorService _pool = Executors.newFixedThreadPool(10);
   // This type does not belongs to real HealthCheck failed reason. Also if we add this type
   // to HealthCheck enum, it could introduce more unnecessary check step since the InstanceServiceImpl
   // loops all the types to do corresponding checks.
@@ -158,11 +165,6 @@ public class InstancesAccessor extends AbstractHelixResource {
               OBJECT_MAPPER.getTypeFactory().constructCollectionType(List.class, String.class));
 
       List<String> orderOfZone = null;
-      String customizedInput = null;
-      if (node.get(InstancesAccessor.InstancesProperties.customized_values.name()) != null) {
-        customizedInput = node.get(InstancesAccessor.InstancesProperties.customized_values.name()).getTextValue();
-      }
-
       if (node.get(InstancesAccessor.InstancesProperties.zone_order.name()) != null) {
         orderOfZone = OBJECT_MAPPER
             .readValue(node.get(InstancesAccessor.InstancesProperties.zone_order.name()).toString(),
@@ -175,27 +177,45 @@ public class InstancesAccessor extends AbstractHelixResource {
           result.putArray(InstancesAccessor.InstancesProperties.instance_stoppable_parallel.name());
       ObjectNode failedStoppableInstances = result.putObject(
           InstancesAccessor.InstancesProperties.instance_not_stoppable_with_reasons.name());
-      InstanceService instanceService =
-          new InstanceServiceImpl(new HelixDataAccessorWrapper((ZKHelixDataAccessor) getDataAccssor(clusterId)), getConfigAccessor());
       ClusterService clusterService =
           new ClusterServiceImpl(getDataAccssor(clusterId), getConfigAccessor());
       ClusterTopology clusterTopology = clusterService.getClusterTopology(clusterId);
       switch (selectionBase) {
       case zone_based:
-        List<String> zoneBasedInstance =
+        List<String> zoneBasedInstances =
             getZoneBasedInstances(instances, orderOfZone, clusterTopology.toZoneMapping());
-        for (String instance : zoneBasedInstance) {
-          StoppableCheck stoppableCheckResult =
-              instanceService.getInstanceStoppableCheck(clusterId, instance, customizedInput);
-          if (!stoppableCheckResult.isStoppable()) {
-            ArrayNode failedReasonsNode = failedStoppableInstances.putArray(instance);
-            for (String failedReason : stoppableCheckResult.getFailedChecks()) {
-              failedReasonsNode.add(JsonNodeFactory.instance.textNode(failedReason));
-            }
-          } else {
-            stoppableInstances.add(instance);
-          }
+
+
+        final String customizedInput = Optional.ofNullable(node.get(InstancesAccessor.InstancesProperties.customized_values.name()))
+            .map(JsonNode::getTextValue)
+            .orElse("");
+        InstanceService instanceService =
+            new InstanceServiceImpl(new HelixDataAccessorWrapper((ZKHelixDataAccessor) getDataAccssor(clusterId)), getConfigAccessor());
+        Map<String, Future<StoppableCheck>> futureStoppableChecks = new HashMap<>();
+        for (String instance : zoneBasedInstances) {
+          Callable<StoppableCheck> stoppableCheckCallable =
+              () -> instanceService.getInstanceStoppableCheck(clusterId, instance, customizedInput);
+          futureStoppableChecks.put(instance, _pool.submit(stoppableCheckCallable));
         }
+
+        futureStoppableChecks.entrySet().forEach(
+            kv -> {
+              try {
+                String instance = kv.getKey();
+                StoppableCheck stoppableCheckResult = kv.getValue().get();
+                if (!stoppableCheckResult.isStoppable()) {
+                  ArrayNode failedReasonsNode = failedStoppableInstances.putArray(instance);
+                  for (String failedReason : stoppableCheckResult.getFailedChecks()) {
+                    failedReasonsNode.add(JsonNodeFactory.instance.textNode(failedReason));
+                  }
+                } else {
+                  stoppableInstances.add(instance);
+                }
+              } catch (InterruptedException | ExecutionException e) {
+                _logger.info("Failed to execution tasks in thread pool", e);
+              }
+            }
+        );
 
         // Adding following logic to check whether instances exist or not. An instance exist could be
         // checking following scenario:
