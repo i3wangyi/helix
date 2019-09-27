@@ -21,6 +21,7 @@ import org.apache.helix.model.ResourceAssignment;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 
+
 public class RebalanceAlgorithmAnalysis {
   private static List<Float> getConfigs(int size) {
     List<Float> result = new ArrayList<>();
@@ -35,8 +36,7 @@ public class RebalanceAlgorithmAnalysis {
     return Math.round(value * Math.pow(10, scale)) / Math.pow(10, scale);
   }
 
-  private static void writeToCSV(String fileName, List<String> columns, List<List<String>> rows)
-      throws IOException {
+  private static void writeToCSV(String fileName, List<String> columns, List<List<String>> rows) throws IOException {
 
     FileWriter csvWriter = new FileWriter(fileName);
     csvWriter.append(String.join(",", columns)).append("\n");
@@ -65,35 +65,31 @@ public class RebalanceAlgorithmAnalysis {
   private static List<String> getTrainingDataSet(float[] weights, MockClusterModel clusterModel)
       throws HelixRebalanceException {
     float totalPartitionsCount = clusterModel.getContext().getAllReplicas().size();
-    Map<String, ResourceAssignment> initPossibleAssignment =
-        clusterModel.getContext().getBestPossibleAssignment();
+    Map<String, ResourceAssignment> initPossibleAssignment = clusterModel.getContext().getBestPossibleAssignment();
 
     Map<ClusterConfig.GlobalRebalancePreferenceKey, Integer> preferences = Collections.emptyMap();
 
-    RebalanceAlgorithm rebalanceAlgorithm =
-        ConstraintBasedAlgorithmFactory.getInstance(preferences, weights);
+    RebalanceAlgorithm rebalanceAlgorithm = ConstraintBasedAlgorithmFactory.getInstance(preferences, weights);
 
     // create a list of new nodes
-    List<AssignableNode> newNodes = MockClusterModelBuilder.createInstances("NewInstance", 10,
-        "NewZone", ImmutableMap.of("size", 500), 30);
+    List<AssignableNode> newNodes =
+        MockClusterModelBuilder.createInstances("NewInstance", 10, "NewZone", ImmutableMap.of("size", 500), 30);
 
     // add these new nodes to the cluster
     clusterModel.onClusterExpansion(newNodes);
-    OptimalAssignment clusterExpansionOptimalAssignment =
-        rebalanceAlgorithm.calculate(clusterModel);
-    double clusterExpansionEvenness =
-        clusterModel.getCoefficientOfVariationAsEvenness().get("size");
+    OptimalAssignment clusterExpansionOptimalAssignment = rebalanceAlgorithm.calculate(clusterModel);
+    double clusterExpansionEvenness = clusterModel.getCoefficientOfVariationAsEvenness().get("size");
     //TODO: check if there're movements between existing nodes
     double clusterExpansionMovements =
-        clusterModel.getTotalMovedPartitionsCount(clusterExpansionOptimalAssignment,
-            initPossibleAssignment) / totalPartitionsCount;
+        clusterModel.getTotalMovedPartitionsCount(clusterExpansionOptimalAssignment, initPossibleAssignment)
+            / totalPartitionsCount;
     // remove the newly added nodes
     clusterModel.onInstanceCrash(newNodes);
     OptimalAssignment instanceCrashOptimalAssignment = rebalanceAlgorithm.calculate(clusterModel);
     double instanceCrashEvenness = clusterModel.getCoefficientOfVariationAsEvenness().get("size");
     double instanceCrashMovements =
-        clusterModel.getTotalMovedPartitionsCount(clusterExpansionOptimalAssignment,
-            initPossibleAssignment) / totalPartitionsCount;
+        clusterModel.getTotalMovedPartitionsCount(clusterExpansionOptimalAssignment, initPossibleAssignment)
+            / totalPartitionsCount;
 
     List<String> rows = new ArrayList<>();
     for (float weight : weights) {
@@ -101,12 +97,14 @@ public class RebalanceAlgorithmAnalysis {
     }
     rows.add(String.valueOf(clusterExpansionEvenness));
     rows.add(String.valueOf(clusterExpansionMovements));
+    rows.add(String.valueOf(instanceCrashEvenness));
+    rows.add(String.valueOf(instanceCrashMovements));
 
     return rows;
   }
 
-  private static List<List<String>> onWeightChange(List<Float> initWeights,
-      MockClusterModel clusterModel, int weightIndex) throws HelixRebalanceException {
+  private static List<List<String>> onWeightChange(List<Float> initWeights, MockClusterModel clusterModel,
+      int weightIndex) throws HelixRebalanceException {
     List<List<String>> result = new ArrayList<>();
     for (int seed = -1; seed < 5; seed++) {
       List<Float> settings = updateWeight(seed, initWeights, weightIndex);
@@ -118,8 +116,11 @@ public class RebalanceAlgorithmAnalysis {
 
   public static void main(String[] args) throws HelixRebalanceException, IOException {
     MockClusterModel clusterModel = new MockClusterModelBuilder("TestCluster").setZoneCount(3)
-        .setInstanceCountPerZone(10).setResourceCount(1).setPartitionCountPerResource(15)
-        .setMaxPartitionsPerInstance(10).build();
+        .setInstanceCountPerZone(10)
+        .setResourceCount(1)
+        .setPartitionCountPerResource(15)
+        .setMaxPartitionsPerInstance(10)
+        .build();
 
     List<List<String>> result = new ArrayList<>();
 
@@ -128,12 +129,10 @@ public class RebalanceAlgorithmAnalysis {
       List<Float> settings = getConfigs(5);
       Map<ClusterConfig.GlobalRebalancePreferenceKey, Integer> preferences = Collections.emptyMap();
       float[] weights = getPrimitives(settings);
-      RebalanceAlgorithm rebalanceAlgorithm =
-          ConstraintBasedAlgorithmFactory.getInstance(preferences, weights);
+      RebalanceAlgorithm rebalanceAlgorithm = ConstraintBasedAlgorithmFactory.getInstance(preferences, weights);
 
       OptimalAssignment optimalAssignment = rebalanceAlgorithm.calculate(clusterModel);
-      Map<String, ResourceAssignment> bestPossibleAssignment =
-          optimalAssignment.getOptimalResourceAssignment();
+      Map<String, ResourceAssignment> bestPossibleAssignment = optimalAssignment.getOptimalResourceAssignment();
       clusterModel.getContext().setBestPossibleAssignment(bestPossibleAssignment);
 
       for (int i = 0; i < settings.size(); i++) {
@@ -141,9 +140,9 @@ public class RebalanceAlgorithmAnalysis {
       }
     }
 
-    List<String> names =
-        ImmutableList.of("PartitionMovement", "InstancePartitionCount", "ResourcePartitionCount",
-            "ResourceTopStateCount", "MaxCapacityKeyUsage", "worstEvenness", "worstMovement");
+    List<String> names = ImmutableList.of("PartitionMovement", "InstancePartitionCount", "ResourcePartitionCount",
+        "ResourceTopStateCount", "MaxCapacityKeyUsage", "clusterExpansionEvenness", "clusterExpansionMovements",
+        "instanceCrashEvenness", "instanceCrashMovements");
     writeToCSV("dataset.csv", names, result);
   }
 }
