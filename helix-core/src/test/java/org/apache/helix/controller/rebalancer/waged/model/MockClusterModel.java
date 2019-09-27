@@ -22,7 +22,6 @@ package org.apache.helix.controller.rebalancer.waged.model;
 import static com.google.common.math.DoubleMath.mean;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -30,12 +29,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import com.google.common.collect.Sets;
 import org.apache.helix.model.Partition;
 import org.apache.helix.model.ResourceAssignment;
 
 import com.google.common.collect.MapDifference;
 import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
 
 public class MockClusterModel extends ClusterModel {
   public MockClusterModel(ClusterContext clusterContext, Set<AssignableReplica> unAssignedReplicas,
@@ -102,12 +101,6 @@ public class MockClusterModel extends ClusterModel {
 
   }
 
-  private void release(AssignableNode node, Collection<AssignableReplica> replicas) {
-    for (AssignableReplica replica : replicas) {
-      release(node, replica);
-    }
-  }
-
   /**
    * Compare the calculated assignment compared to the base assignment and get the
    * partition movements count
@@ -164,6 +157,16 @@ public class MockClusterModel extends ClusterModel {
 
     return usages.entrySet().stream()
         .collect(Collectors.toMap(Map.Entry::getKey, e -> getCoefficientOfVariation(e.getValue())));
+  }
+
+  public double getMaxCapacityKeyUsageAsEvenness() {
+    Set<AssignableNode> instances = getAssignableNodes();
+    double usage = 0;
+    for (AssignableNode instance : instances) {
+      usage = Math.max(usage,
+          instance.getCapacityUsage().get("size") / (float) instance.getMaxCapacity().get("size"));
+    }
+    return usage;
   }
 
   public Map<String, Double> getMaxDifferenceAsEvenness() {

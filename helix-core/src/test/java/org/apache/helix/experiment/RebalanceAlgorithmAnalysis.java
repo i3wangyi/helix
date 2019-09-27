@@ -83,6 +83,7 @@ public class RebalanceAlgorithmAnalysis {
         rebalanceAlgorithm.calculate(clusterModel);
     double clusterExpansionEvenness =
         clusterModel.getCoefficientOfVariationAsEvenness().get("size");
+    double clusterExpansionMaxUsage = clusterModel.getMaxCapacityKeyUsageAsEvenness();
     // TODO: check if there're movements between existing nodes
     double clusterExpansionMovements =
         clusterModel.getTotalMovedPartitionsCount(clusterExpansionOptimalAssignment,
@@ -91,6 +92,7 @@ public class RebalanceAlgorithmAnalysis {
     clusterModel.onInstanceCrash(newNodes);
     OptimalAssignment instanceCrashOptimalAssignment = rebalanceAlgorithm.calculate(clusterModel);
     double instanceCrashEvenness = clusterModel.getCoefficientOfVariationAsEvenness().get("size");
+    double instanceCrashMaxUsage = clusterModel.getMaxCapacityKeyUsageAsEvenness();
     double instanceCrashMovements =
         clusterModel.getTotalMovedPartitionsCount(instanceCrashOptimalAssignment,
             initPossibleAssignment) / totalPartitionsCount;
@@ -101,8 +103,10 @@ public class RebalanceAlgorithmAnalysis {
     }
     rows.add(String.valueOf(clusterExpansionEvenness));
     rows.add(String.valueOf(clusterExpansionMovements));
+    rows.add(String.valueOf(clusterExpansionMaxUsage));
     rows.add(String.valueOf(instanceCrashEvenness));
     rows.add(String.valueOf(instanceCrashMovements));
+    rows.add(String.valueOf(instanceCrashMaxUsage));
 
     return rows;
   }
@@ -120,7 +124,7 @@ public class RebalanceAlgorithmAnalysis {
 
   public static void main(String[] args) throws HelixRebalanceException, IOException {
     MockClusterModel clusterModel = new MockClusterModelBuilder("TestCluster").setZoneCount(3)
-        .setInstanceCountPerZone(10).setResourceCount(1).setPartitionCountPerResource(15)
+        .setInstanceCountPerZone(10).setResourceCount(3).setPartitionCountPerResource(15)
         .setMaxPartitionsPerInstance(10).build();
 
     List<List<String>> result = new ArrayList<>();
@@ -144,10 +148,10 @@ public class RebalanceAlgorithmAnalysis {
       }
     }
 
-    List<String> names =
-        ImmutableList.of("PartitionMovement", "InstancePartitionCount", "ResourcePartitionCount",
-            "ResourceTopStateCount", "MaxCapacityKeyUsage", "clusterExpansionEvenness",
-            "clusterExpansionMovements", "instanceCrashEvenness", "instanceCrashMovements");
+    List<String> names = ImmutableList.of("PartitionMovement", "InstancePartitionCount",
+        "ResourcePartitionCount", "ResourceTopStateCount", "MaxCapacityKeyUsage",
+        "clusterExpansionEvenness", "clusterExpansionMovements", "clusterExpansionMaxUsage",
+        "instanceCrashEvenness", "instanceCrashMovements", "instanceCrashMaxUsage");
     writeToCSV("dataset.csv", names, result);
   }
 }
