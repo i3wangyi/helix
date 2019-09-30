@@ -51,13 +51,6 @@ public class RebalanceAlgorithmAnalysis {
     return r;
   }
 
-  private static List<Float> updateWeight(int seed, List<Float> weights, int index) {
-    int diff = (int) Math.pow(10, seed);
-    List<Float> ret = new ArrayList<>(weights);
-    ret.set(index, diff + ret.get(index));
-    return ret;
-  }
-
   private static List<String> getTrainingDataSet(float[] weights, MockClusterModel clusterModel)
       throws HelixRebalanceException {
     float totalPartitionsCount = clusterModel.getContext().getAllReplicas().size();
@@ -125,7 +118,7 @@ public class RebalanceAlgorithmAnalysis {
       clusterModel.getContext().setBestPossibleAssignment(bestPossibleAssignment);
       clusterModel.getContext().setBaselineAssignment(bestPossibleAssignment);
 
-      result.add(getTrainingDataSet(getPrimitives(settings), clusterModel));
+      result.add(getTrainingDataSet(weights, clusterModel));
     }
 
     List<String> names = ImmutableList.of("PartitionMovement", "InstancePartitionCount", "ResourcePartitionCount",
