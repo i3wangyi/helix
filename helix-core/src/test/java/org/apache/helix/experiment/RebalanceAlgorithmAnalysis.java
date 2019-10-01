@@ -75,13 +75,15 @@ public class RebalanceAlgorithmAnalysis {
     double clusterExpansionMovements =
         clusterModel.getTotalMovedPartitionsCount(clusterExpansionOptimalAssignment,
             initPossibleAssignment) / totalPartitionsCount;
+    Map<String, ResourceAssignment> bestPossibleAssignmentAfterClusterExpansion = clusterExpansionOptimalAssignment.getOptimalResourceAssignment();
+    clusterModel.getContext().setBaselineAssignment(bestPossibleAssignmentAfterClusterExpansion);
+    clusterModel.getContext().setBestPossibleAssignment(bestPossibleAssignmentAfterClusterExpansion);
     // remove the newly added nodes
     clusterModel.onInstanceCrash(newNodes);
     OptimalAssignment instanceCrashOptimalAssignment = rebalanceAlgorithm.calculate(clusterModel);
     double instanceCrashEvenness = clusterModel.getCoefficientOfVariationAsEvenness().get("size");
     double instanceCrashMovements =
-        clusterModel.getTotalMovedPartitionsCount(instanceCrashOptimalAssignment,
-            initPossibleAssignment) / totalPartitionsCount;
+        clusterModel.getTotalMovedPartitionsCount(instanceCrashOptimalAssignment, bestPossibleAssignmentAfterClusterExpansion) / totalPartitionsCount;
 
     List<String> rows = new ArrayList<>();
     for (float weight : weights) {
