@@ -34,7 +34,6 @@ import org.apache.helix.model.ResourceAssignment;
 
 import com.google.common.collect.MapDifference;
 import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
 
 public class MockClusterModel extends ClusterModel {
   public MockClusterModel(ClusterContext clusterContext, Set<AssignableReplica> unAssignedReplicas,
@@ -47,58 +46,33 @@ public class MockClusterModel extends ClusterModel {
         other.getAssignableNodes());
   }
 
-  public void onInstanceAddition(AssignableNode newNode) {
-    // release everything
-    Set<AssignableNode> currentNodes = getAssignableNodes();
-    currentNodes.forEach(AssignableNode::releaseAll);
-    // add the new node
-    currentNodes.add(newNode);
-
-    reset(getContext().getAllReplicas(), currentNodes, getContext());
-  }
-
   public void onClusterExpansion(List<AssignableNode> newNodes) {
     Set<AssignableNode> currentNodes = getAssignableNodes();
     currentNodes.forEach(AssignableNode::releaseAll);
     // add the new node
     currentNodes.addAll(newNodes);
+    ClusterContext clusterContext = getContext();
+    Set<AssignableReplica> allReplicas = clusterContext.getAllReplicas();
+    ClusterContext update = new ClusterContext(allReplicas, currentNodes.size(),
+        clusterContext.getBaselineAssignment(), clusterContext.getBestPossibleAssignment());
 
-    reset(getContext().getAllReplicas(), currentNodes, getContext());
-  }
-
-  public void onInstanceCrash(AssignableNode node) {
-    Set<AssignableNode> currentNodes = getAssignableNodes();
-    if (!currentNodes.contains(node)) {
-      return;
-    }
-    Set<AssignableReplica> unAssignedReplicas = new HashSet<>(node.getAssignedReplicas());
-    node.releaseAll();
-    currentNodes.remove(node);
-
-    reset(unAssignedReplicas, currentNodes, getContext());
+    reset(allReplicas, currentNodes, update);
   }
 
   public void onInstanceCrash(List<AssignableNode> nodes) {
     Set<AssignableNode> currentNodes = getAssignableNodes();
     Set<AssignableNode> crashedNodes = new HashSet<>(nodes);
-    Set<AssignableNode> remains = Sets.difference(currentNodes, crashedNodes);
+    currentNodes.removeAll(crashedNodes);
     Set<AssignableReplica> unAssignedReplicas = crashedNodes.stream()
         .map(AssignableNode::getAssignedReplicas).flatMap(Set::stream).collect(Collectors.toSet());
     crashedNodes.forEach(AssignableNode::releaseAll);
 
-    reset(unAssignedReplicas, remains, getContext());
-  }
+    ClusterContext clusterContext = getContext();
+    Set<AssignableReplica> allReplicas = clusterContext.getAllReplicas();
+    ClusterContext update = new ClusterContext(allReplicas, currentNodes.size(),
+        clusterContext.getBaselineAssignment(), clusterContext.getBestPossibleAssignment());
 
-  public void onNewReplicasAddition(List<AssignableReplica> replicas) {
-
-  }
-
-  public void onReplicaWeightChange(AssignableReplica updatedReplica) {
-
-  }
-
-  public void onInstanceWeightChange(AssignableNode updatedNode) {
-
+    reset(unAssignedReplicas, currentNodes, update);
   }
 
   /**

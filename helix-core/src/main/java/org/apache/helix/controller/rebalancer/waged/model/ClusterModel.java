@@ -113,12 +113,6 @@ public class ClusterModel {
     }
   }
 
-  public List<AssignableReplica> getAssignableReplicasByResource(String resource) {
-    return _unAssignedReplicas.stream()
-        .filter(replica -> replica.getResourceName().equals(resource))
-        .collect(Collectors.toList());
-  }
-
   public List<AssignableReplica> getUnassignedReplicas() {
     return new ArrayList<>(_unAssignedReplicas);
   }
