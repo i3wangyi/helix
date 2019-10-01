@@ -76,7 +76,7 @@ public class AssignableNode implements Comparable<AssignableNode> {
     refresh(clusterConfig, instanceConfig);
   }
 
-  void releaseAll() {
+  public void releaseAll() {
     _currentAssignedReplicaMap = new HashMap<>();
     _currentCapacityMap = new HashMap<>(_maxCapacity);
     _currentAssignedReplicas = new HashSet<>();
