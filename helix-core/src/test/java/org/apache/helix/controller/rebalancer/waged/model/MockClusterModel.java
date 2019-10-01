@@ -119,7 +119,7 @@ public class MockClusterModel extends ClusterModel {
    * It's used as a tool to evaluate the "evenness" of an partitions to instances assignment
    * @return a multi-dimension CV keyed by capacity key
    */
-  public Map<String, Double> getCoefficientOfVariationAsEvenness() {
+  public Map<String, Double> getCoefficientOfVariation() {
     List<AssignableNode> instances = new ArrayList<>(getAssignableNodesAsMap().values());
     Map<String, List<Integer>> usages = new HashMap<>();
     for (AssignableNode instance : instances) {
@@ -133,17 +133,44 @@ public class MockClusterModel extends ClusterModel {
         .collect(Collectors.toMap(Map.Entry::getKey, e -> getCoefficientOfVariation(e.getValue())));
   }
 
+  public double getMaxResourceCountAsEvenness() {
+    int maxResourceCount = 0;
+    for (AssignableNode node : getAssignableNodes()) {
+      int count = node.getAssignedPartitionsMap().keySet().size();
+      maxResourceCount = Math.max(maxResourceCount, count);
+    }
+
+    return maxResourceCount;
+  }
+
+  public double getMaxTopStatesAsEvenness() {
+    int maxTopStates = 0;
+    for (AssignableNode node : getAssignableNodes()) {
+      maxTopStates = Math.max(maxTopStates, node.getAssignedTopStatePartitionsCount());
+    }
+
+    return maxTopStates;
+  }
+
   public double getMaxCapacityKeyUsageAsEvenness() {
     Set<AssignableNode> instances = getAssignableNodes();
     double usage = 0;
     for (AssignableNode instance : instances) {
-      usage = Math.max(usage,
-          instance.getCapacityUsage().get("size") / (float) instance.getMaxCapacity().get("size"));
+      usage = Math.max(usage, instance.getHighestCapacityUtilization());
     }
     return usage;
   }
 
-  public Map<String, Double> getMaxDifferenceAsEvenness() {
+  public double getMaxPartitionsCountAsEvenness() {
+    double max = 0;
+    for (AssignableNode node : getAssignableNodes()) {
+      max = Math.max(node.getAssignedReplicaCount(), max);
+    }
+
+    return max;
+  }
+
+  public Map<String, Double> getMinMaxDifferenceEvenness() {
     Set<AssignableNode> instances = getAssignableNodes();
     Map<String, List<Integer>> usages = new HashMap<>();
     for (AssignableNode instance : instances) {
