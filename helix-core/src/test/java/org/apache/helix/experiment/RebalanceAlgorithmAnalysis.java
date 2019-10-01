@@ -53,16 +53,16 @@ public class RebalanceAlgorithmAnalysis {
     return r;
   }
 
-  private static List<Float> simulate(RebalanceAlgorithm rebalanceAlgorithm, MockClusterModel clusterModel)
+  private static double[] simulate(RebalanceAlgorithm rebalanceAlgorithm, MockClusterModel clusterModel)
       throws HelixRebalanceException {
     float totalPartitionsCount = clusterModel.getContext().getAllReplicas().size();
     Map<String, ResourceAssignment> initPossibleAssignment = clusterModel.getContext().getBestPossibleAssignment();
     OptimalAssignment optimalAssignment = rebalanceAlgorithm.calculate(clusterModel);
-    float evenness = (float) (double) clusterModel.getCoefficientOfVariationAsEvenness().get("size");
-    float movements = (float) clusterModel.getTotalMovedPartitionsCount(optimalAssignment, initPossibleAssignment)
-        / totalPartitionsCount;
+    double evenness = clusterModel.getCoefficientOfVariationAsEvenness().get("size");
+    double movements =
+        clusterModel.getTotalMovedPartitionsCount(optimalAssignment, initPossibleAssignment) / totalPartitionsCount;
 
-    return ImmutableList.of(evenness, movements);
+    return new double[]{evenness, movements};
   }
 
   private static MockClusterModel reset(MockClusterModel baseModel) {
@@ -90,8 +90,8 @@ public class RebalanceAlgorithmAnalysis {
       float[] randomWeights = getPrimitives(numbers);
       RebalanceAlgorithm algorithm = getAlgorithm(randomWeights);
       OptimalAssignment initAssignment = algorithm.calculate(clusterModel);
-      Map<String, ResourceAssignment> initBestAssignment =
-          initAssignment.getOptimalResourceAssignment();
+      Map<String, ResourceAssignment> initBestAssignment = initAssignment.getOptimalResourceAssignment();
+      double initEvenness = clusterModel.getCoefficientOfVariationAsEvenness().get("size");
       clusterModel.getContext().setBestPossibleAssignment(initBestAssignment);
       clusterModel.getContext().setBaselineAssignment(initBestAssignment);
       // create a list of new nodes
@@ -100,12 +100,15 @@ public class RebalanceAlgorithmAnalysis {
       // add these new nodes to the cluster
       clusterModel.onClusterExpansion(newNodes);
 
-      numbers.addAll(simulate(algorithm, clusterModel));
+      double[] r = simulate(algorithm, clusterModel);
+      numbers.add((float) ((r[0] - initEvenness) / initEvenness));
+      numbers.add((float) r[1]);
+
       result.add(numbers.stream().map(String::valueOf).collect(Collectors.toList()));
     }
 
     List<String> names = ImmutableList.of("PartitionMovement", "InstancePartitionCount", "ResourcePartitionCount",
         "ResourceTopStateCount", "MaxCapacityKeyUsage", "evenness", "movements");
-    writeToCSV("dataset.csv", names, result);
+    writeToCSV("dataset-40.csv", names, result);
   }
 }
