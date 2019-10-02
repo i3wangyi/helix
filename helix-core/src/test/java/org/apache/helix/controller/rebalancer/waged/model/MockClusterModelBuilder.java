@@ -195,12 +195,12 @@ public class MockClusterModelBuilder {
     for (int i = 0; i < partitionCount; i++) {
       String state = "";
       int statePriority = -1;
-      Map<String, Integer> usage = new HashMap<>();
+      // assume the replicas of the same partition share the same capacity usage
+      Map<String, Integer> usage =Maps.transformValues(maxCapacityUsage, sampleFunction::apply);
       for (String stateModel : stateModels) {
         if (!stateModel.equals(state)) {
           state = stateModel;
           statePriority++;
-          usage = Maps.transformValues(maxCapacityUsage, sampleFunction::apply);
         }
         AssignableReplica replica =
             new AssignableReplica.Builder(partitionNamePrefix + "_" + i, resourceName).resourceMaxPartitionsPerInstance(

@@ -134,43 +134,43 @@ public class MockClusterModel extends ClusterModel {
   }
 
   public double getMaxResourceCountAsEvenness() {
-    int maxResourceCount = 0;
+    List<Integer> usages = new ArrayList<>();
     for (AssignableNode node : getAssignableNodes()) {
-      int count = node.getAssignedPartitionsMap().keySet().size();
-      maxResourceCount = Math.max(maxResourceCount, count);
+      int count = node.getAssignedPartitionsMap().values().size();
+      usages.add(count);
     }
 
-    return maxResourceCount;
+    return getCoefficientOfVariation(usages);
   }
 
   public double getMaxTopStatesAsEvenness() {
-    int maxTopStates = 0;
+    List<Integer> usages = new ArrayList<>();
     for (AssignableNode node : getAssignableNodes()) {
-      maxTopStates = Math.max(maxTopStates, node.getAssignedTopStatePartitionsCount());
+      usages.add(node.getAssignedTopStatePartitionsCount());
     }
 
-    return maxTopStates;
+    return getCoefficientOfVariation(usages);
   }
 
   public double getMaxCapacityKeyUsageAsEvenness() {
     Set<AssignableNode> instances = getAssignableNodes();
-    double usage = 0;
+    List<Float> usages = new ArrayList<>();
     for (AssignableNode instance : instances) {
-      usage = Math.max(usage, instance.getHighestCapacityUtilization());
+      usages.add(instance.getHighestCapacityUtilization());
     }
-    return usage;
+    return getCV(usages);
   }
 
   public double getMaxPartitionsCountAsEvenness() {
-    double max = 0;
+    List<Integer> usages = new ArrayList<>();
     for (AssignableNode node : getAssignableNodes()) {
-      max = Math.max(node.getAssignedReplicaCount(), max);
+      usages.add(node.getAssignedReplicaCount());
     }
 
-    return max;
+    return getCoefficientOfVariation(usages);
   }
 
-  public Map<String, Double> getMinMaxDifferenceEvenness() {
+  public Map<String, Double> getMinMaxDifference() {
     Set<AssignableNode> instances = getAssignableNodes();
     Map<String, List<Integer>> usages = new HashMap<>();
     for (AssignableNode instance : instances) {
@@ -181,10 +181,10 @@ public class MockClusterModel extends ClusterModel {
     }
 
     return usages.entrySet().stream().collect(
-        Collectors.toMap(Map.Entry::getKey, e -> getMaxDifferenceOfVariation(e.getValue())));
+        Collectors.toMap(Map.Entry::getKey, e -> getMinMaxDifferenceVariation(e.getValue())));
   }
 
-  private static double getMaxDifferenceOfVariation(List<Integer> nums) {
+  private static double getMinMaxDifferenceVariation(List<Integer> nums) {
     double max = nums.get(0);
     double min = nums.get(1);
 
@@ -197,9 +197,19 @@ public class MockClusterModel extends ClusterModel {
   }
 
   private static double getCoefficientOfVariation(List<Integer> nums) {
-    int sum = 0;
+    double sum = 0;
     double mean = mean(nums);
     for (int num : nums) {
+      sum += Math.pow((num - mean), 2);
+    }
+    double std = Math.sqrt(sum / (nums.size() - 1));
+    return std / mean;
+  }
+
+  private static double getCV(List<Float> nums) {
+    double sum = 0;
+    double mean = mean(nums);
+    for (float num : nums) {
       sum += Math.pow((num - mean), 2);
     }
     double std = Math.sqrt(sum / (nums.size() - 1));
