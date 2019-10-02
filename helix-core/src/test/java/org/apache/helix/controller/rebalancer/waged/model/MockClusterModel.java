@@ -24,6 +24,7 @@ import static com.google.common.math.DoubleMath.mean;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -32,10 +33,9 @@ import java.util.stream.Collectors;
 import org.apache.helix.model.Partition;
 import org.apache.helix.model.ResourceAssignment;
 
-import com.google.common.collect.MapDifference;
-import com.google.common.collect.Maps;
-
 public class MockClusterModel extends ClusterModel {
+  private List<AssignableNode> _newInstances = new ArrayList<>();
+
   public MockClusterModel(ClusterContext clusterContext, Set<AssignableReplica> unAssignedReplicas,
       Set<AssignableNode> assignableNodes) {
     super(clusterContext, unAssignedReplicas, assignableNodes);
@@ -57,6 +57,7 @@ public class MockClusterModel extends ClusterModel {
         clusterContext.getBaselineAssignment(), clusterContext.getBestPossibleAssignment());
 
     reset(allReplicas, currentNodes, update);
+    _newInstances = newNodes;
   }
 
   public void onInstanceCrash(List<AssignableNode> nodes) {
@@ -75,39 +76,40 @@ public class MockClusterModel extends ClusterModel {
     reset(unAssignedReplicas, currentNodes, update);
   }
 
-  /**
-   * Compare the calculated assignment compared to the base assignment and get the
-   * partition movements count
-   * @param baseAssignment The base assignment (could be best possible/baseline assignment)
-   * @return a simple cumulative count of total movements where differences of movements in terms of
-   *         location, size, etc is ignored
-   */
-  public int getTotalMovedPartitionsCount(OptimalAssignment optimalAssignment,
+  public LinkedHashMap<String, Double> getTotalMovedPartitionsCountClusterExpansion(
+      Map<String, ResourceAssignment> newAssignment,
       Map<String, ResourceAssignment> baseAssignment) {
-    Map<String, ResourceAssignment> assignment = optimalAssignment.getOptimalResourceAssignment();
-    int movements = 0;
-    for (String resource : assignment.keySet()) {
-      final ResourceAssignment resourceAssignment = assignment.get(resource);
-      if (!baseAssignment.containsKey(resource)) {
-        // It means the resource is a newly added resource
-        movements += resourceAssignment.getMappedPartitions().stream()
-            .map(resourceAssignment::getReplicaMap).map(Map::size).mapToInt(i -> i).sum();
-      } else {
-        ResourceAssignment lastResourceAssignment = baseAssignment.get(resource);
-        for (Partition partition : resourceAssignment.getMappedPartitions()) {
-          Map<String, String> thisInstanceToStates = resourceAssignment.getReplicaMap(partition);
-          Map<String, String> lastInstanceToStates =
-              lastResourceAssignment.getReplicaMap(partition);
-          MapDifference<String, String> diff =
-              Maps.difference(thisInstanceToStates, lastInstanceToStates);
-          // common keys(instances) but have different values (states)
-          movements += diff.entriesDiffering().size();
-          // Moved to different instances
-          movements += diff.entriesOnlyOnLeft().size();
+    LinkedHashMap<String, Double> moves = new LinkedHashMap<>();
+    int movedToNewInstances = 0;
+    int movedBetweenExistingInstances = 0;
+    int stateChangeBetweenOldInstance = 0;
+    Set<String> newInstanceNames =
+        _newInstances.stream().map(AssignableNode::getInstanceName).collect(Collectors.toSet());
+    for (String resource : newAssignment.keySet()) {
+      final ResourceAssignment resourceAssignment = newAssignment.get(resource);
+      ResourceAssignment prevResourceAssignment = baseAssignment.get(resource);
+      for (Partition partition : resourceAssignment.getMappedPartitions()) {
+        Map<String, String> thisInstanceToStates = resourceAssignment.getReplicaMap(partition);
+        Map<String, String> prevInstanceToStates = prevResourceAssignment.getReplicaMap(partition);
+
+        for (String instance : thisInstanceToStates.keySet()) {
+          if (newInstanceNames.contains(instance)) {
+            movedToNewInstances += 1;
+          } else {
+            if (!prevInstanceToStates.containsKey(instance)) {
+              movedBetweenExistingInstances += 1;
+            } else if (!prevInstanceToStates.get(instance).equals(thisInstanceToStates.get(instance))) {
+              stateChangeBetweenOldInstance += 1;
+            }
+          }
         }
       }
     }
-    return movements;
+
+    moves.put("movedToNewInstances", (double) movedToNewInstances);
+    moves.put("movedBetweenOldInstances", (double) movedBetweenExistingInstances);
+    moves.put("STBetweenOldInstances", (double) stateChangeBetweenOldInstance);
+    return moves;
   }
 
   /**

@@ -53,9 +53,10 @@ public class RebalanceAlgorithmAnalysis {
     OptimalAssignment optimalAssignment = rebalanceAlgorithm.calculate(clusterModel);
     double cvEvenness = clusterModel.getCoefficientOfVariation().get("size");
     stats.put("evennessCV", cvEvenness);
-    double partitionMovements =
-        clusterModel.getTotalMovedPartitionsCount(optimalAssignment, initPossibleAssignment);
-    stats.put("partitionMovement", partitionMovements);
+    LinkedHashMap<String, Double> partitionMovements =
+        clusterModel.getTotalMovedPartitionsCountClusterExpansion(
+            optimalAssignment.getOptimalResourceAssignment(), initPossibleAssignment);
+    stats.putAll(partitionMovements);
     double maxResourceCount = clusterModel.getMaxResourceCountAsEvenness();
     stats.put("maxResourceCount", maxResourceCount);
     double maxPartitionCount = clusterModel.getMaxPartitionsCountAsEvenness();
@@ -87,11 +88,10 @@ public class RebalanceAlgorithmAnalysis {
         "ResourcePartitionCount", "ResourceTopStateCount", "MaxCapacityKeyUsage");
     List<String> columnNames = new ArrayList<>(features);
 
-    for (int i = 0; i < 100; i++) {
+    for (int i = 0; i < 1000; i++) {
       MockClusterModel clusterModel = reset(baseModel);
       Map<String, Float> weights = features.stream().collect(
-          Collectors.toMap(Function.identity(), name -> (float) new Random().nextInt(100)));
-
+          Collectors.toMap(Function.identity(), name -> (float) new Random().nextInt(100) + 1));
       float[] randomWeights = getPrimitives(new ArrayList<>(weights.values()));
       RebalanceAlgorithm algorithm = getAlgorithm(randomWeights);
       OptimalAssignment initAssignment = algorithm.calculate(clusterModel);
@@ -116,6 +116,6 @@ public class RebalanceAlgorithmAnalysis {
       result.add(numbers.stream().map(String::valueOf).collect(Collectors.toList()));
     }
 
-    writeToCSV("dataset-40.csv", columnNames, result);
+    writeToCSV("dataset.csv", columnNames, result);
   }
 }
