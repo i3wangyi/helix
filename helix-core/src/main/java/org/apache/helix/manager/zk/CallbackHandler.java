@@ -228,8 +228,6 @@ public class CallbackHandler implements IZkChildListener, IZkDataListener {
     }
 
     parseListenerProperties();
-
-    init();
   }
 
   private void parseListenerProperties() {

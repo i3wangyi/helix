@@ -30,9 +30,11 @@ import java.util.Timer;
 import java.util.TimerTask;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -1009,7 +1011,63 @@ public class GenericHelixController implements IdealStateChangeListener,
    */
   protected void checkLiveInstancesObservation(List<LiveInstance> liveInstances,
       NotificationContext changeContext) {
-
+    long start = System.currentTimeMillis();
+    // TODO: remove the synchronization here once we move this update into dataCache.
+//    synchronized (_lastSeenInstances) {
+//      Map<String, LiveInstance> lastSeenInstances = _lastSeenInstances.get();
+//      Map<String, LiveInstance> lastSeenSessions = _lastSeenSessions.get();
+//      lastSeenInstances = lastSeenInstances == null? Collections.emptyMap() : lastSeenInstances;
+//      lastSeenSessions = lastSeenSessions == null ? Collections.emptyMap() : lastSeenSessions;
+//
+//      final HelixManager manager = changeContext.getManager();
+//      Builder keyBuilder = new Builder(manager.getClusterName());
+//      Set<String> expiredSessions = Sets.difference(lastSeenSessions.keySet(), curSessions.keySet());
+//      Set<String> disConnectedInstances = Sets.difference(lastSeenInstances.keySet(), curInstances.keySet());
+//      ExecutorService executorService = Executors.newCachedThreadPool();
+//      // remove current-state listener for expired session
+//      for (String session : expiredSessions) {
+//        String instanceName = lastSeenSessions.get(session).getInstanceName();
+//        Runnable task = () -> manager.removeListener(keyBuilder.currentStates(instanceName, session), this);
+//        executorService.submit(task);
+//      }
+//      // remove messages listeners for disConnected instances
+//      for (String instance : disConnectedInstances) {
+//        executorService.submit(() -> manager.removeListener(keyBuilder.messages(instance), this));
+//      }
+//      // add listeners for new sessions and live instances
+//      Set<String> newSessions = Sets.difference(curSessions.keySet(), lastSeenSessions.keySet());
+//      Set<String> newLiveInstances = Sets.difference(curInstances.keySet(), lastSeenInstances.keySet());
+//      for (String session : newSessions) {
+//        String instanceName = curSessions.get(session).getInstanceName();
+//        executorService.submit(() -> {
+//          try {
+//            // add current-state listeners for new sessions
+//            manager.addCurrentStateChangeListener(this, instanceName, session);
+//            logger.info(manager.getInstanceName() + " added current-state listener for instance: "
+//                + instanceName + ", session: " + session + ", listener: " + this);
+//          } catch (Exception e) {
+//            logger.error("Fail to add current state listener for instance: " + instanceName
+//                + " with session: " + session, e);
+//          }
+//        });
+//      }
+//
+//      for (String instance : newLiveInstances) {
+//        executorService.submit(() -> {
+//          try {
+//            // add message listeners for new instances
+//            manager.addMessageListener(this, instance);
+//            logger.info(manager.getInstanceName() + " added message listener for " + instance
+//                + ", listener: " + this);
+//          } catch (Exception e) {
+//            logger.error("Fail to add message listener for instance: " + instance, e);
+//          }
+//        });
+//      }
+//
+//      logger.info("Wait until all operation finished");
+//      // wait until all operation finish
+//      executorService.shutdown();
     // construct maps for current live-instances
     Map<String, LiveInstance> curInstances = new HashMap<>();
     Map<String, LiveInstance> curSessions = new HashMap<>();
@@ -1071,6 +1129,8 @@ public class GenericHelixController implements IdealStateChangeListener,
         }
       }
 
+      // wait until all operation finish
+      logger.info("Spent {}ms registering current states and messages listeners for live instances", System.currentTimeMillis()  - start);
       // update last-seen
       _lastSeenInstances.set(curInstances);
       _lastSeenSessions.set(curSessions);

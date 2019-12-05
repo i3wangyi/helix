@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.Timer;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import javax.management.JMException;
 import org.I0Itec.zkclient.IZkStateListener;
@@ -327,8 +328,9 @@ public class ZKHelixManager implements HelixManager, IZkStateListener {
   @Override public boolean removeListener(PropertyKey key, Object listener) {
     LOG.info("Removing listener: " + listener + " on path: " + key.getPath() + " from cluster: "
         + _clusterName + " by instance: " + _instanceName);
+    long t = System.currentTimeMillis();
+    List<CallbackHandler> toRemove = new ArrayList<>();
     synchronized (this) {
-      List<CallbackHandler> toRemove = new ArrayList<>();
       // verify the listener is actually added by previous operation
       for (CallbackHandler handler : _handlers) {
         // compare property-key path and listener reference
@@ -339,12 +341,13 @@ public class ZKHelixManager implements HelixManager, IZkStateListener {
 
       _handlers.removeAll(toRemove);
 
-      // handler.reset() may modify the handlers list, so do it outside the iteration
-      for (CallbackHandler handler : toRemove) {
-        handler.reset(true);
-      }
     }
 
+    // handler.reset() may modify the handlers list, so do it outside the iteration
+    for (CallbackHandler handler : toRemove) {
+      handler.reset(true);
+    }
+    LOG.info("Spent {}ms to remove listener at path {}", System.currentTimeMillis() - t, key.getPath());
     return true;
   }
 
@@ -383,10 +386,12 @@ public class ZKHelixManager implements HelixManager, IZkStateListener {
   // add batch listeners?
   void addListener(Object listener, PropertyKey propertyKey, ChangeType changeType,
       EventType[] eventType) {
+    long t = System.currentTimeMillis();
     checkConnected(_waitForConnectedTimeout);
 
     PropertyType type = propertyKey.getType();
 
+    CallbackHandler newHandler;
     synchronized (this) {
       for (CallbackHandler handler : _handlers) {
         // compare property-key path and listener reference
@@ -399,7 +404,7 @@ public class ZKHelixManager implements HelixManager, IZkStateListener {
         }
       }
 
-      CallbackHandler newHandler =
+      newHandler =
           new CallbackHandler(this, _zkclient, propertyKey, listener, eventType, changeType,
               _callbackMonitors.get(changeType));
 
@@ -407,6 +412,8 @@ public class ZKHelixManager implements HelixManager, IZkStateListener {
       LOG.info("Added listener: " + listener + " for type: " + type + " to path: "
           + newHandler.getPath());
     }
+    newHandler.init();
+    LOG.info("Spent {}ms to add listener for path {}", System.currentTimeMillis() - t,  propertyKey.getPath());
   }
 
   @Override
@@ -1183,6 +1190,7 @@ public class ZKHelixManager implements HelixManager, IZkStateListener {
               new EventType[] {
                   EventType.NodeChildrenChanged, EventType.NodeDeleted, EventType.NodeCreated
               }, ChangeType.CONTROLLER, _callbackMonitors.get(ChangeType.CONTROLLER));
+      _leaderElectionHandler.init();
     }
   }
 
