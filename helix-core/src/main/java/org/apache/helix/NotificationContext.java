@@ -43,6 +43,11 @@ public class NotificationContext {
   private String _pathChanged;
   private String _eventName;
   private long _creationTime;
+  private String _trackingId = "";
+
+  public void setTrackingId(String trackingId) {
+    _trackingId = trackingId;
+  }
 
   /**
    * Get the name associated with the event
@@ -180,6 +185,10 @@ public class NotificationContext {
    */
   public Object get(String key) {
     return _map.get(key);
+  }
+
+  public String getTrackingId() {
+    return _trackingId;
   }
 
   /**

@@ -86,21 +86,11 @@ public class DistributedLeaderElection implements ControllerChangeListener {
     }
   }
 
-  private void relinquishLeadership(HelixManager manager,
-      ControllerManagerHelper controllerHelper) {
-    long start = System.currentTimeMillis();
-    LOG.info(manager.getInstanceName() + " tries to relinquish leadership for cluster: " + manager
-        .getClusterName());
-    controllerHelper.stopControllerTimerTasks();
-    controllerHelper.removeListenersFromController(_controller);
-    // clear write-through cache
-    manager.getHelixDataAccessor().getBaseDataAccessor().reset();
-    LOG.info("{} relinquishes leadership for cluster: {}, took: {}ms", manager.getInstanceName(),
-        manager.getClusterName(), System.currentTimeMillis() - start);
-  }
-
   private void acquireLeadership(final HelixManager manager,
-      ControllerManagerHelper controllerHelper) {
+      ControllerManagerHelper controllerHelper) throws InterruptedException {
+    LOG.info(manager.getInstanceName() + " is trying to acquire leadership for cluster: " + manager
+        .getClusterName());
+
     HelixDataAccessor accessor = manager.getHelixDataAccessor();
     PropertyKey leaderNodePropertyKey = accessor.keyBuilder().controllerLeader();
 
@@ -115,13 +105,33 @@ public class DistributedLeaderElection implements ControllerChangeListener {
       long start = System.currentTimeMillis();
       if (tryCreateController(manager)) {
         manager.getHelixDataAccessor().getBaseDataAccessor().reset();
+        LOG.info("Finished resetting");
         controllerHelper.addListenersToController(_controller);
+        LOG.info("Added all listeners");
         controllerHelper.startControllerTimerTasks();
         LOG.info("{} with session {} acquired leadership for cluster: {}, took: {}ms",
             manager.getInstanceName(), manager.getSessionId(), manager.getClusterName(),
             System.currentTimeMillis() - start);
       }
     } while (accessor.getProperty(leaderNodePropertyKey) == null);
+    LOG.info("Finished timer task");
+    LOG.info("Sleep 20 seconds");
+    Thread.sleep(20000);
+    LOG.info("RelinquishLeadership immediately after acquiring leadership");
+    relinquishLeadership(manager, controllerHelper);
+  }
+
+  private void relinquishLeadership(HelixManager manager,
+      ControllerManagerHelper controllerHelper) {
+    LOG.info(manager.getInstanceName() + " relinquish leadership for cluster: " + manager
+        .getClusterName());
+    controllerHelper.stopControllerTimerTasks();
+    LOG.info("Finished stopping controller timer task");
+    controllerHelper.removeListenersFromController(_controller);
+    LOG.info("Finished removing controller listeners");
+    // clear write-through cache
+    manager.getHelixDataAccessor().getBaseDataAccessor().reset();
+    LOG.info("Finished resetting data accessor");
   }
 
   /**

@@ -19,6 +19,7 @@ package org.apache.helix.manager.zk;
  * under the License.
  */
 
+import com.google.common.collect.Sets;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
@@ -29,8 +30,6 @@ import java.util.Set;
 import java.util.Timer;
 import java.util.concurrent.TimeUnit;
 import javax.management.JMException;
-
-import com.google.common.collect.Sets;
 import org.I0Itec.zkclient.IZkStateListener;
 import org.I0Itec.zkclient.exception.ZkInterruptedException;
 import org.apache.helix.BaseDataAccessor;
@@ -328,9 +327,9 @@ public class ZKHelixManager implements HelixManager, IZkStateListener {
   @Override public boolean removeListener(PropertyKey key, Object listener) {
     LOG.info("Removing listener: " + listener + " on path: " + key.getPath() + " from cluster: "
         + _clusterName + " by instance: " + _instanceName);
-
     synchronized (this) {
       List<CallbackHandler> toRemove = new ArrayList<>();
+      // verify the listener is actually added by previous operation
       for (CallbackHandler handler : _handlers) {
         // compare property-key path and listener reference
         if (handler.getPath().equals(key.getPath()) && handler.getListener().equals(listener)) {
@@ -381,6 +380,7 @@ public class ZKHelixManager implements HelixManager, IZkStateListener {
     }
   }
 
+  // add batch listeners?
   void addListener(Object listener, PropertyKey propertyKey, ChangeType changeType,
       EventType[] eventType) {
     checkConnected(_waitForConnectedTimeout);
@@ -540,6 +540,7 @@ public class ZKHelixManager implements HelixManager, IZkStateListener {
         ChangeType.MESSAGES_CONTROLLER, new EventType[] { EventType.NodeChildrenChanged });
   }
 
+  // It's the expensive add operation
   @Override
   public void addCurrentStateChangeListener(CurrentStateChangeListener listener,
       String instanceName, String sessionId) throws Exception {

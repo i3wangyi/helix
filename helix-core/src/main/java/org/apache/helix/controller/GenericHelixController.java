@@ -1022,30 +1022,29 @@ public class GenericHelixController implements IdealStateChangeListener,
     synchronized (_lastSeenInstances) {
       Map<String, LiveInstance> lastInstances = _lastSeenInstances.get();
       Map<String, LiveInstance> lastSessions = _lastSeenSessions.get();
+      lastInstances = lastInstances == null? Collections.emptyMap() : lastInstances;
+      lastSessions = lastSessions == null ? Collections.emptyMap() : lastSessions;
 
       HelixManager manager = changeContext.getManager();
       Builder keyBuilder = new Builder(manager.getClusterName());
-      if (lastSessions != null) {
-        for (String session : lastSessions.keySet()) {
-          if (!curSessions.containsKey(session)) {
-            // remove current-state listener for expired session
-            String instanceName = lastSessions.get(session).getInstanceName();
-            manager.removeListener(keyBuilder.currentStates(instanceName, session), this);
-          }
+      for (String session : lastSessions.keySet()) {
+        if (!curSessions.containsKey(session)) {
+          // remove current-state listener for expired session
+          String instanceName = lastSessions.get(session).getInstanceName();
+          manager.removeListener(keyBuilder.currentStates(instanceName, session), this);
         }
       }
 
-      if (lastInstances != null) {
-        for (String instance : lastInstances.keySet()) {
-          if (!curInstances.containsKey(instance)) {
-            // remove message listener for disconnected instances
-            manager.removeListener(keyBuilder.messages(instance), this);
-          }
+      for (String instance : lastInstances.keySet()) {
+        if (!curInstances.containsKey(instance)) {
+          // remove message listener for disconnected instances
+          manager.removeListener(keyBuilder.messages(instance), this);
         }
       }
 
+      // TODO: test multi-thread add operations
       for (String session : curSessions.keySet()) {
-        if (lastSessions == null || !lastSessions.containsKey(session)) {
+        if (!lastSessions.containsKey(session)) {
           String instanceName = curSessions.get(session).getInstanceName();
           try {
             // add current-state listeners for new sessions
@@ -1060,7 +1059,7 @@ public class GenericHelixController implements IdealStateChangeListener,
       }
 
       for (String instance : curInstances.keySet()) {
-        if (lastInstances == null || !lastInstances.containsKey(instance)) {
+        if (!lastInstances.containsKey(instance)) {
           try {
             // add message listeners for new instances
             manager.addMessageListener(this, instance);

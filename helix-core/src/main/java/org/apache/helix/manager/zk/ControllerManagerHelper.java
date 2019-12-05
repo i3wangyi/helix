@@ -79,10 +79,15 @@ public class ControllerManagerHelper {
        * setup generic-controller
        */
       _manager.addControllerListener(controller);
+      LOG.info("Added controller listener");
       _manager.addInstanceConfigChangeListener(controller);
+      LOG.info("Added instance config listener");
       _manager.addResourceConfigChangeListener(controller);
+      LOG.info("Added resource config listener");
       _manager.addClusterfigChangeListener(controller);
+      LOG.info("Added cluster config change listener");
       _manager.addLiveInstanceChangeListener(controller);
+      LOG.info("Added live instance change listener");
       _manager.addIdealStateChangeListener(controller);
     } catch (ZkInterruptedException e) {
       LOG.warn("zk connection is interrupted during HelixManagerMain.addListenersToController(). "
@@ -92,22 +97,30 @@ public class ControllerManagerHelper {
     }
   }
 
+  //TODO: why it involves I/O operations?
   public void removeListenersFromController(GenericHelixController controller) {
     PropertyKey.Builder keyBuilder = new PropertyKey.Builder(_manager.getClusterName());
     /**
      * reset generic-controller
      */
     _manager.removeListener(keyBuilder.idealStates(), controller);
+    LOG.info("Finish removing idealstates listeners");
     _manager.removeListener(keyBuilder.liveInstances(), controller);
+    LOG.info("Finish removing live instances listeners");
     _manager.removeListener(keyBuilder.clusterConfig(), controller);
+    LOG.info("Finish removing clusterconfig listeners");
     _manager.removeListener(keyBuilder.resourceConfigs(), controller);
+    LOG.info("Finish removing resourceconfig listeners");
     _manager.removeListener(keyBuilder.instanceConfigs(), controller);
+    LOG.info("Finish removing instanceconfig listeners");
     _manager.removeListener(keyBuilder.controller(), controller);
+    LOG.info("Finish removing controller listeners");
 
     /**
      * reset controller message listener and unregister all message handlers
      */
     _manager.removeListener(keyBuilder.controllerMessages(), _messagingService.getExecutor());
+    LOG.info("Finish removing listeners");
   }
 
   public void startControllerTimerTasks() {
