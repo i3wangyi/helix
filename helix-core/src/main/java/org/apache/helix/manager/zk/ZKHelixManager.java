@@ -329,7 +329,7 @@ public class ZKHelixManager implements HelixManager, IZkStateListener {
     LOG.info("Removing listener: " + listener + " on path: " + key.getPath() + " from cluster: "
         + _clusterName + " by instance: " + _instanceName);
 
-    synchronized (this) {
+    synchronized (_handlers) {
       List<CallbackHandler> toRemove = new ArrayList<>();
       for (CallbackHandler handler : _handlers) {
         // compare property-key path and listener reference
@@ -347,6 +347,27 @@ public class ZKHelixManager implements HelixManager, IZkStateListener {
     }
 
     return true;
+  }
+
+  @Override
+  public boolean removeAllListeners() {
+    LOG.info("Remove all registered listeners from the clusters {} on the instance {}", _clusterName, _instanceName);
+    List<CallbackHandler> toRemove = new ArrayList<>();
+    synchronized (_handlers) {
+      for (CallbackHandler handler : _handlers) {
+        if (handler.getPath().startsWith("/" + _clusterName)) {
+          toRemove.add(handler);
+        }
+      }
+      _handlers.removeAll(toRemove);
+    }
+
+    // parallel removal?
+    for (CallbackHandler handler : toRemove) {
+      handler.reset(true);
+    }
+
+    return false;
   }
 
   void checkConnected() {

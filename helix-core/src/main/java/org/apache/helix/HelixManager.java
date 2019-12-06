@@ -279,6 +279,13 @@ public interface HelixManager {
   boolean removeListener(PropertyKey key, Object listener);
 
   /**
+   * Remove all listeners registered in a cluster
+   * The method is designed to be invoked during controller leadership hand-off
+   * @return True if remove succeeds otherwise false
+   */
+  boolean removeAllListeners();
+
+  /**
    * Return the client to perform read/write operations on the cluster data
    * store
    * @return ClusterDataAccessor

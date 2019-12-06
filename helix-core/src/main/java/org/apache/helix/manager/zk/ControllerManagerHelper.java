@@ -97,17 +97,18 @@ public class ControllerManagerHelper {
     /**
      * reset generic-controller
      */
-    _manager.removeListener(keyBuilder.idealStates(), controller);
-    _manager.removeListener(keyBuilder.liveInstances(), controller);
-    _manager.removeListener(keyBuilder.clusterConfig(), controller);
-    _manager.removeListener(keyBuilder.resourceConfigs(), controller);
-    _manager.removeListener(keyBuilder.instanceConfigs(), controller);
-    _manager.removeListener(keyBuilder.controller(), controller);
-
-    /**
-     * reset controller message listener and unregister all message handlers
-     */
-    _manager.removeListener(keyBuilder.controllerMessages(), _messagingService.getExecutor());
+    _manager.removeAllListeners();
+//    _manager.removeListener(keyBuilder.idealStates(), controller);
+//    _manager.removeListener(keyBuilder.liveInstances(), controller);
+//    _manager.removeListener(keyBuilder.clusterConfig(), controller);
+//    _manager.removeListener(keyBuilder.resourceConfigs(), controller);
+//    _manager.removeListener(keyBuilder.instanceConfigs(), controller);
+//    _manager.removeListener(keyBuilder.controller(), controller);
+//
+//    /**
+//     * reset controller message listener and unregister all message handlers
+//     */
+//    _manager.removeListener(keyBuilder.controllerMessages(), _messagingService.getExecutor());
   }
 
   public void startControllerTimerTasks() {
