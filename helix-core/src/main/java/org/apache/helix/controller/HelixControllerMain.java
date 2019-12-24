@@ -50,6 +50,7 @@ import org.apache.helix.InstanceType;
 import org.apache.helix.manager.zk.HelixManagerShutdownHook;
 import org.apache.helix.participant.DistClusterControllerStateModelFactory;
 import org.apache.helix.participant.StateMachineEngine;
+import org.apache.helix.spectator.RoutingTableProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -146,6 +147,22 @@ public class HelixControllerMain {
     } catch (Exception e) {
       logger.error("Error when creating HelixManagerContollerMonitor", e);
     }
+  }
+
+  public static HelixManager startHelixSpectator(final String zkConnectString,
+      final String clusterName, final String spectatorName) {
+    HelixManager manager = HelixManagerFactory
+        .getZKHelixManager(clusterName, spectatorName, InstanceType.SPECTATOR, zkConnectString);
+//    RoutingTableProvider routingTableProvider = new RoutingTableProvider();
+    try {
+//      manager.addExternalViewChangeListener(routingTableProvider);
+//      manager.addLiveInstanceChangeListener(routingTableProvider);
+//      manager.addInstanceConfigChangeListener(routingTableProvider);
+      manager.connect();
+    } catch (Exception e) {
+      logger.error("Exception while starting the spectator", e);
+    }
+    return manager;
   }
 
   public static HelixManager startHelixController(final String zkConnectString,
