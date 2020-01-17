@@ -215,7 +215,6 @@ public class ZkClient implements Watcher {
   }
 
   public void unsubscribeChildChanges(String path, IZkChildListener childListener) {
-    LOG.info("Unsubscribe child changes for path: {}", path);
     synchronized (_childListener) {
       final Set<IZkChildListener> listeners = _childListener.get(path);
       if (listeners != null) {
@@ -272,7 +271,6 @@ public class ZkClient implements Watcher {
   }
 
   public void unsubscribeDataChanges(String path, IZkDataListener dataListener) {
-    LOG.info("Unsubscribe data change for path: {}", path);
     synchronized (_dataListener) {
       final Set<IZkDataListenerEntry> listeners = _dataListener.get(path);
       if (listeners != null) {
@@ -940,7 +938,7 @@ public class ZkClient implements Watcher {
           getEventLock().getDataChangedCondition().signalAll();
         }
       }
-      if (znodeChanged) { // true
+      if (znodeChanged) {
         getEventLock().getZNodeEventCondition().signalAll();
       }
       if (dataChanged) {
@@ -1044,7 +1042,6 @@ public class ZkClient implements Watcher {
   private Stat getStat(final String path, final boolean watch) {
     long startT = System.currentTimeMillis();
     try {
-      System.out.println("Get stat add watcher");
       Stat stat = retryUntilConnected(
           () -> ((ZkConnection) getConnection()).getZookeeper().exists(path, watch));
       record(path, null, startT, ZkClientMonitor.AccessType.READ);
@@ -1371,14 +1368,12 @@ public class ZkClient implements Watcher {
     if (LOG.isDebugEnabled()) {
       LOG.debug("Waiting until znode '" + path + "' becomes available.");
     }
-    System.out.println("wait until exists");
     if (exists(path)) {
       return true;
     }
     acquireEventLock();
     try {
       while (!exists(path, true)) {
-        System.out.println("while loop wait until exists");
         boolean gotSignal = getEventLock().getZNodeEventCondition().awaitUntil(timeout);
         if (!gotSignal) {
           return false;
@@ -1821,7 +1816,6 @@ public class ZkClient implements Watcher {
   }
 
   public void watchForData(final String path) {
-    LOG.info("Added the data watcher for path: " + path);
     retryUntilConnected(new Callable<Object>() {
       @Override
       public Object call() throws Exception {
