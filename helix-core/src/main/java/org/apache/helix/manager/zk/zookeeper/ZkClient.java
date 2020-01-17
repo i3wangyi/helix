@@ -16,12 +16,12 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import javax.management.JMException;
 
 import org.I0Itec.zkclient.DataUpdater;
@@ -145,32 +145,29 @@ public class ZkClient implements Watcher {
 
   private class ZkPathStatRecord {
     private final String _path;
-    private Stat _stat = null;
-    private boolean _checked = false;
+    // It make sure the propagation latency will only be reported even multiple listeners of the path exist
+    private AtomicBoolean _isChecked = new AtomicBoolean(false);
 
-    public ZkPathStatRecord(String path) {
+    ZkPathStatRecord(String path) {
       _path = path;
     }
 
-    public boolean pathExists() {
-      return _stat != null;
-    }
-
-    public boolean pathChecked() {
-      return _checked;
+    boolean isPathChecked() {
+      return _isChecked.get();
     }
 
     /*
      * Note this method is not thread safe.
      */
-    public void recordPathStat(Stat stat, OptionalLong notificationTime) {
-      _checked = true;
-      _stat = stat;
-
-      if (_monitor != null && stat != null && notificationTime.isPresent()) {
+    void recordPathStat(Stat stat, long notificationTime) {
+      if (isPathChecked()) {
+        return;
+      }
+      _isChecked.set(true);
+      if (_monitor != null && stat != null) {
         long updateTime = Math.max(stat.getCtime(), stat.getMtime());
-        if (notificationTime.getAsLong() > updateTime) {
-          _monitor.recordDataPropagationLatency(_path, notificationTime.getAsLong() - updateTime);
+        if (notificationTime > updateTime) {
+          _monitor.recordDataPropagationLatency(_path, notificationTime - updateTime);
         } // else, the node was updated again after the notification. Propagation latency is
           // unavailable.
       }
@@ -218,6 +215,7 @@ public class ZkClient implements Watcher {
   }
 
   public void unsubscribeChildChanges(String path, IZkChildListener childListener) {
+    LOG.info("Unsubscribe child changes for path: {}", path);
     synchronized (_childListener) {
       final Set<IZkChildListener> listeners = _childListener.get(path);
       if (listeners != null) {
@@ -274,6 +272,7 @@ public class ZkClient implements Watcher {
   }
 
   public void unsubscribeDataChanges(String path, IZkDataListener dataListener) {
+    LOG.info("Unsubscribe data change for path: {}", path);
     synchronized (_dataListener) {
       final Set<IZkDataListenerEntry> listeners = _dataListener.get(path);
       if (listeners != null) {
@@ -941,7 +940,7 @@ public class ZkClient implements Watcher {
           getEventLock().getDataChangedCondition().signalAll();
         }
       }
-      if (znodeChanged) {
+      if (znodeChanged) { // true
         getEventLock().getZNodeEventCondition().signalAll();
       }
       if (dataChanged) {
@@ -963,7 +962,7 @@ public class ZkClient implements Watcher {
       fireChildChangedEvents(entry.getKey(), entry.getValue());
     }
     for (Entry<String, Set<IZkDataListenerEntry>> entry : _dataListener.entrySet()) {
-      fireDataChangedEvents(entry.getKey(), entry.getValue(), OptionalLong.empty());
+      fireDataChangedEvents(entry.getKey(), entry.getValue());
     }
   }
 
@@ -1045,6 +1044,7 @@ public class ZkClient implements Watcher {
   private Stat getStat(final String path, final boolean watch) {
     long startT = System.currentTimeMillis();
     try {
+      System.out.println("Get stat add watcher");
       Stat stat = retryUntilConnected(
           () -> ((ZkConnection) getConnection()).getZookeeper().exists(path, watch));
       record(path, null, startT, ZkClientMonitor.AccessType.READ);
@@ -1261,31 +1261,62 @@ public class ZkClient implements Watcher {
 
     if (event.getType() == EventType.NodeDataChanged || event.getType() == EventType.NodeDeleted
         || event.getType() == EventType.NodeCreated) {
+      boolean isPathExist = event.getType() != EventType.NodeDeleted;
       Set<IZkDataListenerEntry> listeners = _dataListener.get(path);
       if (listeners != null && !listeners.isEmpty()) {
-        fireDataChangedEvents(event.getPath(), listeners, OptionalLong.of(notificationTime));
+        fireDataChangedEvents(event.getPath(), listeners, notificationTime, isPathExist);
       }
     }
   }
 
+  private void fireDataChangedEvents(final String path, Set<IZkDataListenerEntry> listeners) {
+    for (final IZkDataListenerEntry listener : listeners) {
+      ZkEvent zkEvent = new ZkEvent(
+          "Data of " + path + " changed sent to " + listener.getDataListener() + " prefetch data: "
+              + listener.isPrefetchData()) {
+        @Override
+        public void run()
+            throws Exception {
+          Object data;
+          // TODO: are we fetching the data multiple times?
+          if (listener.isPrefetchData()) {
+            LOG.debug("Prefetch data for path: {}", path);
+            try {
+              data = readData(path, null, true);
+            } catch (ZkNoNodeException e) {
+              LOG.warn("Prefetch data for path: {} failed.", path, e);
+              listener.getDataListener().handleDataDeleted(path);
+              return;
+            }
+            listener.getDataListener().handleDataChange(path, data);
+          }
+        }
+      };
+
+      _eventThread.send(zkEvent);
+    }
+  }
+
   private void fireDataChangedEvents(final String path, Set<IZkDataListenerEntry> listeners,
-      final OptionalLong notificationTime) {
+      final long notificationTime, final boolean isPathExist) {
+    final ZkPathStatRecord pathStatRecord = new ZkPathStatRecord(path);
     try {
-      final ZkPathStatRecord pathStatRecord = new ZkPathStatRecord(path);
       // Trigger listener callbacks
       for (final IZkDataListenerEntry listener : listeners) {
         _eventThread.send(new ZkEvent("Data of " + path + " changed sent to "
             + listener.getDataListener() + " prefetch data: " + listener.isPrefetchData()) {
           @Override
           public void run() throws Exception {
-            // Reinstall watch before listener callbacks to check the znode status
-            if (!pathStatRecord.pathChecked()) {
-              pathStatRecord.recordPathStat(getStat(path, true), notificationTime);
-            }
-            if (!pathStatRecord.pathExists()) {
+            if (!isPathExist) {
               // no znode found at the path, trigger data deleted handler.
               listener.getDataListener().handleDataDeleted(path);
-            } else {
+              return;
+            }
+            if (!pathStatRecord.isPathChecked()) {
+              // Reinstall watch before listener callbacks to check the znode status
+              Stat stat = getStat(path, true);
+              pathStatRecord.recordPathStat(stat, notificationTime);
+            }
               Object data = null;
               if (listener.isPrefetchData()) {
                 if (LOG.isDebugEnabled()) {
@@ -1300,7 +1331,6 @@ public class ZkClient implements Watcher {
                 }
               }
               listener.getDataListener().handleDataChange(path, data);
-            }
           }
         });
       }
@@ -1310,19 +1340,15 @@ public class ZkClient implements Watcher {
   }
 
   private void fireChildChangedEvents(final String path, Set<IZkChildListener> childListeners) {
+    // TODO: Reinstall the child watch?
+    Stat stat = getStat(path, hasListeners(path));
     try {
-      final ZkPathStatRecord pathStatRecord = new ZkPathStatRecord(path);
       for (final IZkChildListener listener : childListeners) {
         _eventThread.send(new ZkEvent("Children of " + path + " changed sent to " + listener) {
           @Override
           public void run() throws Exception {
-            // Reinstall watch before listener callbacks to check the znode status
-            if (!pathStatRecord.pathChecked()) {
-              pathStatRecord.recordPathStat(getStat(path, hasListeners(path)),
-                  OptionalLong.empty());
-            }
             List<String> children = null;
-            if (pathStatRecord.pathExists()) {
+            if (stat != null) {
               try {
                 children = getChildren(path);
               } catch (ZkNoNodeException e) {
@@ -1345,12 +1371,14 @@ public class ZkClient implements Watcher {
     if (LOG.isDebugEnabled()) {
       LOG.debug("Waiting until znode '" + path + "' becomes available.");
     }
+    System.out.println("wait until exists");
     if (exists(path)) {
       return true;
     }
     acquireEventLock();
     try {
       while (!exists(path, true)) {
+        System.out.println("while loop wait until exists");
         boolean gotSignal = getEventLock().getZNodeEventCondition().awaitUntil(timeout);
         if (!gotSignal) {
           return false;
@@ -1793,6 +1821,7 @@ public class ZkClient implements Watcher {
   }
 
   public void watchForData(final String path) {
+    LOG.info("Added the data watcher for path: " + path);
     retryUntilConnected(new Callable<Object>() {
       @Override
       public Object call() throws Exception {
