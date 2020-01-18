@@ -145,7 +145,6 @@ public class ZkClient implements Watcher {
 
   private class ZkPathStatRecord {
     private final String _path;
-    // It make sure the propagation latency will only be reported even multiple listeners of the path exist
     private AtomicBoolean _isChecked = new AtomicBoolean(false);
 
     ZkPathStatRecord(String path) {
@@ -1258,44 +1257,55 @@ public class ZkClient implements Watcher {
 
     if (event.getType() == EventType.NodeDataChanged || event.getType() == EventType.NodeDeleted
         || event.getType() == EventType.NodeCreated) {
-      boolean isPathExist = event.getType() != EventType.NodeDeleted;
+      boolean pathExists = event.getType() != EventType.NodeDeleted;
       Set<IZkDataListenerEntry> listeners = _dataListener.get(path);
       if (listeners != null && !listeners.isEmpty()) {
-        fireDataChangedEvents(event.getPath(), listeners, notificationTime, isPathExist);
+        fireDataChangedEvents(event.getPath(), listeners, notificationTime, pathExists);
       }
     }
   }
 
+  /**
+   * The method is called when state change occurs and we need to handle existing path data handlers
+   */
   private void fireDataChangedEvents(final String path, Set<IZkDataListenerEntry> listeners) {
-    for (final IZkDataListenerEntry listener : listeners) {
-      ZkEvent zkEvent = new ZkEvent(
-          "Data of " + path + " changed sent to " + listener.getDataListener() + " prefetch data: "
-              + listener.isPrefetchData()) {
-        @Override
-        public void run()
-            throws Exception {
-          Object data;
-          // TODO: are we fetching the data multiple times?
-          if (listener.isPrefetchData()) {
-            LOG.debug("Prefetch data for path: {}", path);
-            try {
-              data = readData(path, null, true);
-            } catch (ZkNoNodeException e) {
-              LOG.warn("Prefetch data for path: {} failed.", path, e);
-              listener.getDataListener().handleDataDeleted(path);
-              return;
+    try {
+      for (final IZkDataListenerEntry listener : listeners) {
+        ZkEvent zkEvent = new ZkEvent(
+            "Data of " + path + " changed sent to " + listener.getDataListener()
+                + " prefetch data: " + listener.isPrefetchData()) {
+          @Override
+          public void run()
+              throws Exception {
+            Object data;
+            // TODO: are we fetching the data multiple times?
+            if (listener.isPrefetchData()) {
+              LOG.debug("Prefetch data for path: {}", path);
+              try {
+                data = readData(path, null, true);
+              } catch (ZkNoNodeException e) {
+                LOG.warn("Prefetch data for path: {} failed.", path, e);
+                listener.getDataListener().handleDataDeleted(path);
+                return;
+              }
+              listener.getDataListener().handleDataChange(path, data);
             }
-            listener.getDataListener().handleDataChange(path, data);
           }
-        }
-      };
+        };
 
-      _eventThread.send(zkEvent);
+        _eventThread.send(zkEvent);
+      }
+    } catch (Exception e) {
+      LOG.error("Failed to fire data changed event for path: {}", path, e);
     }
   }
 
+  /**
+   * It differs from {@link #fireDataChangedEvents(String, Set)} that the method is called
+   * upon callback notification on the path
+   */
   private void fireDataChangedEvents(final String path, Set<IZkDataListenerEntry> listeners,
-      final long notificationTime, final boolean isPathExist) {
+      final long notificationTime, final boolean pathExists) {
     final ZkPathStatRecord pathStatRecord = new ZkPathStatRecord(path);
     try {
       // Trigger listener callbacks
@@ -1304,13 +1314,15 @@ public class ZkClient implements Watcher {
             + listener.getDataListener() + " prefetch data: " + listener.isPrefetchData()) {
           @Override
           public void run() throws Exception {
-            if (!isPathExist) {
-              // no znode found at the path, trigger data deleted handler.
+            if (!pathExists) {
+              // since the path no longer exists, ONLY need to handle data deleted listener
               listener.getDataListener().handleDataDeleted(path);
               return;
             }
+            // Make sure the propagation latency will only be reported once
+            // even when multiple listeners of the path exist
             if (!pathStatRecord.isPathChecked()) {
-              // Reinstall watch before listener callbacks to check the znode status
+              // The watcher will be re-installed
               Stat stat = getStat(path, true);
               pathStatRecord.recordPathStat(stat, notificationTime);
             }
@@ -1336,8 +1348,13 @@ public class ZkClient implements Watcher {
     }
   }
 
+  /**
+   * The method is called when state change occurs and needs to handle existing path's child handler
+   * TODO: If reporting propagation latency for child listener is needed, need to split the method
+   * like {@link #fireDataChangedEvents(String, Set)}
+   */
   private void fireChildChangedEvents(final String path, Set<IZkChildListener> childListeners) {
-    // TODO: Reinstall the child watch?
+    // TODO: Reinstall the child watch? The stat is only used to determine if the path exists
     Stat stat = getStat(path, hasListeners(path));
     try {
       for (final IZkChildListener listener : childListeners) {
