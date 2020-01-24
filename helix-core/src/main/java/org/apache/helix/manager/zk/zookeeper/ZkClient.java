@@ -887,6 +887,7 @@ public class ZkClient implements Watcher {
 
   @Override
   public void process(WatchedEvent event) {
+    LOG.info("Received WatchedEvent: " +  event.getType() + ", " + event.getPath() + ", "+ event.getState());
     long notificationTime = System.currentTimeMillis();
     if (LOG.isDebugEnabled()) {
       LOG.debug("Received event: " + event);
@@ -1243,8 +1244,8 @@ public class ZkClient implements Watcher {
   }
 
   private void processDataOrChildChange(WatchedEvent event, long notificationTime) {
+    LOG.info("Process Data or Child change");
     final String path = event.getPath();
-
     if (event.getType() == EventType.NodeChildrenChanged || event.getType() == EventType.NodeCreated
         || event.getType() == EventType.NodeDeleted) {
       Set<IZkChildListener> childListeners = _childListener.get(path);
@@ -1354,21 +1355,20 @@ public class ZkClient implements Watcher {
    * like {@link #fireDataChangedEvents(String, Set)}
    */
   private void fireChildChangedEvents(final String path, Set<IZkChildListener> childListeners) {
-    // TODO: Reinstall the child watch? The stat is only used to determine if the path exists
-    Stat stat = getStat(path, hasListeners(path));
+    // TODO: Reinstall ahe child watch? The stat is only used to determine if the path exists
+    watchForChilds(path);
+//    Stat stat = getStat(path, hasListeners(path));
     try {
       for (final IZkChildListener listener : childListeners) {
         _eventThread.send(new ZkEvent("Children of " + path + " changed sent to " + listener) {
           @Override
           public void run() throws Exception {
             List<String> children = null;
-            if (stat != null) {
-              try {
-                children = getChildren(path);
-              } catch (ZkNoNodeException e) {
-                LOG.warn("Get children under path: {} failed.", path, e);
-                // Continue trigger the change handler
-              }
+            try {
+              children = getChildren(path);
+            } catch (ZkNoNodeException e) {
+              LOG.warn("Get children under path: {} failed.", path, e);
+              // Continue trigger the change handler
             }
             listener.handleChildChange(path, children);
           }
@@ -1852,6 +1852,7 @@ public class ZkClient implements Watcher {
     if (_zookeeperEventThread != null && Thread.currentThread() == _zookeeperEventThread) {
       throw new IllegalArgumentException("Must not be done in the zookeeper event thread.");
     }
+    System.out.println("Add children and exists watchers for " + path);
     return retryUntilConnected(new Callable<List<String>>() {
       @Override
       public List<String> call() throws Exception {
