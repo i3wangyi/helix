@@ -892,9 +892,7 @@ public class ZkClient implements Watcher {
   @Override
   public void process(WatchedEvent event) {
     long notificationTime = System.currentTimeMillis();
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("Received event: " + event);
-    }
+    LOG.info("Process event: {}, current thread: {}, _zookeeperThread: {}", event, Thread.currentThread(), _zookeeperEventThread);
     _zookeeperEventThread = Thread.currentThread();
 
     boolean stateChanged = event.getPath() == null;
@@ -1808,9 +1806,6 @@ public class ZkClient implements Watcher {
    *         exist.
    */
   public List<String> watchForChilds(final String path) {
-    if (_zookeeperEventThread != null && Thread.currentThread() == _zookeeperEventThread) {
-      throw new IllegalArgumentException("Must not be done in the zookeeper event thread.");
-    }
     return retryUntilConnected(new Callable<List<String>>() {
       @Override
       public List<String> call() throws Exception {

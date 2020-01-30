@@ -148,6 +148,10 @@ public class CallbackHandler implements IZkChildListener, IZkDataListener {
     SubscribeChangeEventProcessor.start();
   }
 
+  public static DedupEventProcessor getSubscribeChangeEventProcessor() {
+    return SubscribeChangeEventProcessor;
+  }
+
   class SubscribeChangeEvent {
     final CallbackHandler handler;
     final String path;
