@@ -1785,11 +1785,11 @@ public class ZkClient implements Watcher {
   }
 
   private void checkDataSizeLimit(byte[] data) {
-    if (data != null && data.length > ZNRecord.SIZE_LIMIT) {
-      LOG.error("Data size larger than 1M, will not write to zk. Data (first 1k): "
-          + new String(data).substring(0, 1024));
-      throw new HelixException("Data size larger than 1M");
-    }
+//    if (data != null && data.length > ZNRecord.SIZE_LIMIT) {
+//      LOG.error("Data size larger than 1M, will not write to zk. Data (first 1k): "
+//          + new String(data).substring(0, 1024));
+//      throw new HelixException("Data size larger than 1M");
+//    }
   }
 
   public void watchForData(final String path) {
